@@ -1,4 +1,5 @@
 import tkinter as tk
+import random
 
 class EditorCursograma:
     def __init__(self,root):
@@ -14,6 +15,8 @@ class EditorCursograma:
         tk.Button(self.sidebar, text="Agregar Proceso", command=self.crear_proceso).pack(pady=5)
         tk.Button(self.sidebar, text='Agregar Decision', command=self.crear_decision).pack(pady=5)
         tk.Button(self.sidebar, text="Conectar Figuras", command=self.activar_conexion).pack(pady=5)
+        tk.Button(self.sidebar, text="Cancelar Conexión", command=self.cancelar_conexion).pack(pady=5)
+        tk.Button(self.sidebar, text="Limpiar Canvas", command=self.limpiar_canvas).pack(pady=5)
 
 
         # -- Canvas Principal -- 
@@ -35,14 +38,14 @@ class EditorCursograma:
 
 
     def crear_proceso(self):
-        x, y = 100,100
+        x, y = random.randint(50, 800), random.randint(50, 500)
         tag = f'elemento_{self.element_counter}'
         rect = self.canvas.create_rectangle(x,y,x+120, y+50, fill='#4caf50', tags=('proceso', tag))
         texto = self.canvas.create_text(x + 60,y + 25,text='Proceso', fill='white',tags=('proceso', tag))
         self.element_counter += 1
 
     def crear_decision(self):
-        x, y = 250,100
+        x, y = random.randint(50, 400), random.randint(50, 300)
         size = 60
         tag = f'elemento_{self.element_counter}'
         points = [
@@ -71,13 +74,17 @@ class EditorCursograma:
             bbox = self.canvas.bbox(tag_unico)
             x = (bbox[0] + bbox[2]) // 2
             y = (bbox[1] + bbox[3]) // 2
+
             if not self.punto_origen:
-                self.punto_origen = (x, y)
+                self.punto_origen = (x, y, tag_unico)
             else:
-                self.canvas.create_line(self.punto_origen[0], self.punto_origen[1], x, y, arrow=tk.LAST, fill='black')
-                self.punto_origen = None
-                self.modo_conectar = False
-            return
+                if self.punto_origen[2] != tag_unico:
+                    self.canvas.create_line(
+                        self.punto_origen[0], self.punto_origen[1], x, y, arrow=tk.LAST, fill='black', width=2, tags='conexion')
+                    self.punto_origen = None
+                    self.modo_conectar = False
+                    self.canvas.config(cursor="")
+        
 
         if tag_unico:
             self.drag_data['tag'] = tag_unico
@@ -96,9 +103,24 @@ class EditorCursograma:
     def activar_conexion(self):
         self.modo_conectar = True
         self.punto_origen = None
+        self.canvas.config(cursor="crosshair")
+
+    def cancelar_conexion(self):
+        self.modo_conectar = False
+        self.punto_origen = None
+        self.canvas.config(cursor="")
+
+    def limpiar_canvas(self):
+        self.canvas.delete("all")
+        self.element_counter = 0
+        self.modo_conectar = False
+        self.punto_origen = None
+        self.canvas.config(cursor="")
 
     def fin_drag(self, event):
         self.drag_data['tag'] = None
+        if not self.modo_conectar:
+            self.canvas.config(cursor="")
     
 # Ejecutar la app
 root = tk.Tk()
