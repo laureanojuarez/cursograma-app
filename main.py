@@ -38,8 +38,11 @@ class EditorCursograma:
     def crear_proceso(self):
         x, y = random.randint(50, 400), random.randint(50, 300)
         tag = f'elemento_{self.element_counter}'
-        rect = self.canvas.create_rectangle(x,y,x+120, y+50, fill='#4caf50', tags=('proceso', tag))
-        texto = self.canvas.create_text(x + 60,y + 25,text='Proceso', fill='white',tags=('proceso', tag))
+        radio = 40  # Radio del círculo
+        # Crear círculo usando create_oval
+        circulo = self.canvas.create_oval(x - radio, y - radio, x + radio, y + radio, 
+                                        fill='#4caf50', outline='black', tags=('proceso', tag))
+        texto = self.canvas.create_text(x, y, text='Proceso', fill='white', tags=('proceso', tag))
         self.element_counter += 1
 
     def crear_decision(self):
@@ -57,9 +60,12 @@ class EditorCursograma:
         self.element_counter += 1
 
 
+
     def inicio_drag(self, event):
         items = self.canvas.find_withtag("current")
         if not items:
+            if self.modo_conectar:
+                self.cancelar_conexion()
             return
         tags = self.canvas.gettags(items[0])
         tag_unico = next((t for t in tags if t.startswith('elemento_')), None)
@@ -67,12 +73,18 @@ class EditorCursograma:
         # Si estamos en modo conexion
         if self.modo_conectar:
             if not tag_unico:
+                self.cancelar_conexion()
                 return
             
             punto_conexion = self.obtener_punto_conexion(tag_unico, event.x, event.y)
 
+            if not punto_conexion:
+                self.cancelar_conexion()
+                return
+
             if not self.punto_origen:
                 self.punto_origen = (*punto_conexion, tag_unico)
+                print(f"Punto origen establecido: {tag_unico}")
             else:
                 if self.punto_origen[2] != tag_unico:
                     linea = self.canvas.create_line(
@@ -81,19 +93,24 @@ class EditorCursograma:
                         fill='black', width=2, 
                         tags='conexion'
                     )
+
+                    origen_lado = self.determinar_lado(self.punto_origen[2], self.punto_origen[0])
+                    destino_lado = self.determinar_lado(tag_unico, punto_conexion[0], punto_conexion[1])
                     
                     conexion = {
-                    'linea': linea,
-                    'origen_tag': self.punto_origen[2],
-                    'destino_tag': tag_unico,
-                    'origen_lado': self.determinar_lado(self.punto_origen[2], self.punto_origen[0]),
-                    'destino_lado': self.determinar_lado(tag_unico, punto_conexion[0])
+                        'linea': linea,
+                        'origen_tag': self.punto_origen[2],
+                        'destino_tag': tag_unico,
+                        'origen_lado': self.determinar_lado(self.punto_origen[2], self.punto_origen[0]),
+                        'destino_lado': self.determinar_lado(tag_unico, punto_conexion[0], punto_conexion[1])
                     }
                     self.conexiones.append(conexion)
+                    print(f'Conexion creada: {self.punto_origen[2]} -> {tag_unico}')
 
                 self.punto_origen = None
                 self.modo_conectar = False
                 self.canvas.config(cursor="")
+                print('Modo conexion desactivado')
             return
         
         if tag_unico:
@@ -101,12 +118,19 @@ class EditorCursograma:
             self.drag_data['x'] = event.x
             self.drag_data['y'] = event.y
 
-    def determinar_lado(self, tag, punto_x):
+    def determinar_lado(self, tag, punto_x,punto_y=None):
         """Determina el lado de conexión según el tag y la posición X"""
         centro = self.obtener_centro(tag)
         tags = self.canvas.gettags(tag)
+
         if 'decision' in tags:
-            return 'izquierda' if punto_x < centro[0] else 'derecha'
+            if not self.punto_origen:
+                return 'izquierda' if punto_x < centro[0] else 'derecha'
+            else:
+                if punto_y is not None:
+                    return 'arriba' if punto_y < centro[1] else 'abajo'
+                else:
+                    return 'arriba'
         return 'centro'
 
 
@@ -142,6 +166,10 @@ class EditorCursograma:
                 return (centro_x - size // 2, centro_y)
             elif lado == 'derecha':
                 return (centro_x + size // 2, centro_y)
+            elif lado == 'arriba':
+                return (centro_x, centro_y - size // 2)
+            elif lado == 'abajo':
+                return (centro_x, centro_y + size // 2)
         return (centro_x, centro_y)
         
     def obtener_centro(self, tag):
@@ -150,18 +178,31 @@ class EditorCursograma:
     
     def obtener_punto_conexion(self,tag,click_x, click_y):
         bbox = self.canvas.bbox(tag)
+        if not bbox:
+            return None
+        
         centro_x = (bbox[0] + bbox[2]) // 2
         centro_y = (bbox[1] + bbox[3]) // 2
 
         item_con_tag = self.canvas.find_withtag(tag)
+
+        if not item_con_tag:
+            return (centro_x, centro_y)
+
         tags = self.canvas.gettags(item_con_tag[0])
 
         if 'decision' in tags:
             size = 60
-            if click_x < centro_x:
-                return (centro_x - size // 2, centro_y)
+            if not self.punto_origen:
+                if click_x < centro_x:
+                    return (centro_x - size // 2, centro_y) 
+                else:
+                    return (centro_x + size // 2, centro_y)
             else:
-                return (centro_x + size // 2, centro_y)
+                if click_y < centro_y:
+                    return (centro_x, centro_y - size // 2)
+                else:
+                    return (centro_x, centro_y + size // 2)
         else:
             return (centro_x, centro_y)
 
@@ -182,6 +223,7 @@ class EditorCursograma:
         self.modo_conectar = False
         self.punto_origen = None
         self.canvas.config(cursor="")
+        print('Conexion cancelada')
 
     def fin_drag(self, event):
         self.drag_data['tag'] = None
