@@ -18,7 +18,6 @@ class EditorCursograma:
         tk.Button(self.sidebar, text="Cancelar Conexión", command=self.cancelar_conexion).pack(pady=5)
         tk.Button(self.sidebar, text="Limpiar Canvas", command=self.limpiar_canvas).pack(pady=5)
 
-
         # -- Canvas Principal -- 
         self.canvas = tk.Canvas(root, bg='white')
         self.canvas.pack(side='right',fill='both', expand=True)
@@ -26,10 +25,9 @@ class EditorCursograma:
         # Drag and drop
         self.drag_data = {'tag': None, 'x': 0, 'y': 0}
         self.element_counter = 0
-
-        # Conexion
         self.modo_conectar = False
         self.punto_origen = None
+        self.conexiones = []
 
         # Asociar eventos generales al canvas
         self.canvas.bind("<ButtonPress-1>", self.inicio_drag)
@@ -38,7 +36,7 @@ class EditorCursograma:
 
 
     def crear_proceso(self):
-        x, y = random.randint(50, 800), random.randint(50, 500)
+        x, y = random.randint(50, 400), random.randint(50, 300)
         tag = f'elemento_{self.element_counter}'
         rect = self.canvas.create_rectangle(x,y,x+120, y+50, fill='#4caf50', tags=('proceso', tag))
         texto = self.canvas.create_text(x + 60,y + 25,text='Proceso', fill='white',tags=('proceso', tag))
@@ -64,32 +62,53 @@ class EditorCursograma:
         if not items:
             return
         tags = self.canvas.gettags(items[0])
-        # Busca el tag único del elemento
         tag_unico = next((t for t in tags if t.startswith('elemento_')), None)
 
         # Si estamos en modo conexion
         if self.modo_conectar:
             if not tag_unico:
-                return  # Solo conecta si es una figura válida
-            bbox = self.canvas.bbox(tag_unico)
-            x = (bbox[0] + bbox[2]) // 2
-            y = (bbox[1] + bbox[3]) // 2
+                return
+            
+            punto_conexion = self.obtener_punto_conexion(tag_unico, event.x, event.y)
 
             if not self.punto_origen:
-                self.punto_origen = (x, y, tag_unico)
+                self.punto_origen = (*punto_conexion, tag_unico)
             else:
                 if self.punto_origen[2] != tag_unico:
-                    self.canvas.create_line(
-                        self.punto_origen[0], self.punto_origen[1], x, y, arrow=tk.LAST, fill='black', width=2, tags='conexion')
-                    self.punto_origen = None
-                    self.modo_conectar = False
-                    self.canvas.config(cursor="")
-        
+                    linea = self.canvas.create_line(
+                        self.punto_origen[0], self.punto_origen[1], punto_conexion[0],punto_conexion[1], 
+                        arrow=tk.LAST,
+                        fill='black', width=2, 
+                        tags='conexion'
+                    )
+                    
+                    conexion = {
+                    'linea': linea,
+                    'origen_tag': self.punto_origen[2],
+                    'destino_tag': tag_unico,
+                    'origen_lado': self.determinar_lado(self.punto_origen[2], self.punto_origen[0]),
+                    'destino_lado': self.determinar_lado(tag_unico, punto_conexion[0])
+                    }
+                    self.conexiones.append(conexion)
 
+                self.punto_origen = None
+                self.modo_conectar = False
+                self.canvas.config(cursor="")
+            return
+        
         if tag_unico:
             self.drag_data['tag'] = tag_unico
             self.drag_data['x'] = event.x
             self.drag_data['y'] = event.y
+
+    def determinar_lado(self, tag, punto_x):
+        """Determina el lado de conexión según el tag y la posición X"""
+        centro = self.obtener_centro(tag)
+        tags = self.canvas.gettags(tag)
+        if 'decision' in tags:
+            return 'izquierda' if punto_x < centro[0] else 'derecha'
+        return 'centro'
+
 
     def mover_drag(self, event):
         tag = self.drag_data['tag']
@@ -99,6 +118,60 @@ class EditorCursograma:
             self.canvas.move(tag, dx, dy)
             self.drag_data['x'] = event.x
             self.drag_data['y'] = event.y
+            self.actualizar_conexiones(tag)
+
+    def actualizar_conexiones(self, tag_movido):
+        for conexion in self.conexiones:
+            if conexion['origen_tag'] == tag_movido or conexion['destino_tag'] == tag_movido:
+                origen_punto = self.calcular_punto_conexion(conexion['origen_tag'], conexion['origen_lado'])
+                destino_punto = self.calcular_punto_conexion(conexion['destino_tag'], conexion['destino_lado'])
+                self.canvas.coords(conexion['linea'], 
+                                origen_punto[0], origen_punto[1], 
+                                destino_punto[0], destino_punto[1])
+                
+    def calcular_punto_conexion(self, tag, lado):
+        bbox = self.canvas.bbox(tag)
+        centro_x = (bbox[0] + bbox[2]) / 2
+        centro_y = (bbox[1] + bbox[3]) / 2
+
+        tags = self.canvas.gettags(tag)
+
+        if 'decision' in tags:
+            size = 60
+            if lado == 'izquierda':
+                return (centro_x - size // 2, centro_y)
+            elif lado == 'derecha':
+                return (centro_x + size // 2, centro_y)
+        return (centro_x, centro_y)
+        
+    def obtener_centro(self, tag):
+        bbox = self.canvas.bbox(tag)
+        return ((bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) / 2)
+    
+    def obtener_punto_conexion(self,tag,click_x, click_y):
+        bbox = self.canvas.bbox(tag)
+        centro_x = (bbox[0] + bbox[2]) // 2
+        centro_y = (bbox[1] + bbox[3]) // 2
+
+        item_con_tag = self.canvas.find_withtag(tag)
+        tags = self.canvas.gettags(item_con_tag[0])
+
+        if 'decision' in tags:
+            size = 60
+            if click_x < centro_x:
+                return (centro_x - size // 2, centro_y)
+            else:
+                return (centro_x + size // 2, centro_y)
+        else:
+            return (centro_x, centro_y)
+
+    def limpiar_canvas(self):
+        self.canvas.delete("all")
+        self.element_counter = 0
+        self.modo_conectar = False
+        self.punto_origen = None
+        self.conexiones = []
+        self.canvas.config(cursor="")
 
     def activar_conexion(self):
         self.modo_conectar = True
@@ -106,13 +179,6 @@ class EditorCursograma:
         self.canvas.config(cursor="crosshair")
 
     def cancelar_conexion(self):
-        self.modo_conectar = False
-        self.punto_origen = None
-        self.canvas.config(cursor="")
-
-    def limpiar_canvas(self):
-        self.canvas.delete("all")
-        self.element_counter = 0
         self.modo_conectar = False
         self.punto_origen = None
         self.canvas.config(cursor="")
